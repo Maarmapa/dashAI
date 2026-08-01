@@ -36,6 +36,7 @@ from DashAI.back.models.scikit_learn.xgboost_classifier import XGBClassifier
 from DashAI.back.types.categorical import Categorical
 from DashAI.back.types.utils import save_types_in_arrow_metadata
 from DashAI.back.types.value_types import Float
+from tests.back.scratch import scratch_dir
 
 
 @pytest.fixture(scope="module", name="divided_dataset")
@@ -45,7 +46,7 @@ def tabular_model_fixture():
 
     datasetdict = dataloader_test.load_data(
         filepath_or_buffer=test_dataset_path,
-        temp_path="tests/back/models",
+        temp_path=scratch_dir("models"),
         params={
             "separator": ",",
             "schema": {
