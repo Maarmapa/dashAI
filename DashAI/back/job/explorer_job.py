@@ -1,12 +1,15 @@
 import logging
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING
 
 from kink import inject
 from sqlalchemy import exc
 
 from DashAI.back.dependencies.database.models import Explorer, Notebook
-from DashAI.back.exploration.base_explorer import BaseExplorer
 from DashAI.back.job.base_job import BaseJob, JobError
+from DashAI.back.units.context import ExecutionContext
+from DashAI.back.units.load_dataset_unit import LoadDatasetUnit
+from DashAI.back.units.run_exploration_unit import RunExplorationUnit
+from DashAI.back.units.save_exploration_unit import SaveExplorationUnit
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import sessionmaker
@@ -85,17 +88,13 @@ class ExplorerJob(BaseJob):
     def run(
         self,
     ) -> None:
-        import os
-        import pathlib
-
         from kink import di
 
-        from DashAI.back.dataloaders.classes.dashai_dataset import load_dataset
-
-        component_registry = di["component_registry"]
         session_factory = di["session_factory"]
-        config = di["config"]
         explorer_id: int = self.kwargs["explorer_id"]
+
+        ctx = ExecutionContext()
+
         with session_factory() as db:
             # Load the explorer information
             try:
@@ -123,103 +122,59 @@ class ExplorerJob(BaseJob):
                 explorer_info.set_status_as_error()
                 db.commit()
                 raise JobError("Error while loading the notebook info.") from e
+            except Exception:
+                # A notebook that is simply not there used to escape the
+                # SQLAlchemyError handler above and leave the row STARTED
+                # forever, because nothing else marks it: the Huey error signal
+                # writes only to its own task_copy table, and
+                # _execute_base_job calls run() with no handler at all.
+                # Re-raised as-is so the "not found" message survives.
+                explorer_info.set_status_as_error()
+                db.commit()
+                raise
 
-            # Load the dataset from the notebook
+            # Load the dataset from the notebook: its own working copy, which
+            # is what the converters rewrite.
             try:
-                loaded_dataset = load_dataset(f"{notebook_info.file_path}/dataset")
+                LoadDatasetUnit(notebook_id=notebook_info.id)(ctx)
+            except Exception as e:
+                # Anything the load unit raises has to leave the row in ERROR.
+                # Nothing else marks it: the Huey error signal only writes to
+                # its own task_copy table, never to the Explorer row, so
+                # without this the exploration would stay STARTED forever.
+                # Re-raised as-is; the unit reports the same
+                # "Can not load dataset from path ..." message the job used to
+                # build here.
+                log.exception(e)
+                explorer_info.set_status_as_error()
+                db.commit()
+                raise
+
+            # How the exploration configuration is stored on the row — the
+            # component name and its parameters live in separate columns —
+            # rather than part of the exploration itself.
+            explorer = {
+                "component": explorer_info.exploration_type,
+                "params": explorer_info.parameters,
+            }
+
+            # Run the exploration. The unit reports the registry, instancing,
+            # preparation and launch errors with the same texts the job used
+            # to build here; re-raised as-is so they reach the user intact.
+            try:
+                RunExplorationUnit(explorer_id=explorer_id, explorer=explorer)(ctx)
             except Exception as e:
                 log.exception(e)
                 explorer_info.set_status_as_error()
                 db.commit()
-                raise JobError(
-                    f"Can not load dataset from path {notebook_info.file_path}",
-                ) from e
-
-            # obtain the explorer component from the registry
-            try:
-                explorer_component_class: Type[BaseExplorer] = component_registry[
-                    explorer_info.exploration_type
-                ]["class"]
-            except KeyError as e:
-                log.exception(e)
-                explorer_info.set_status_as_error()
-                db.commit()
-                raise JobError(
-                    (
-                        f"Explorer {explorer_info.exploration_type} "
-                        "not found in the registry."
-                    )
-                ) from e
-
-            # Instance the explorer (the explorer handles its validation)
-            try:
-                explorer_instance = explorer_component_class(**explorer_info.parameters)
-                assert isinstance(explorer_instance, BaseExplorer)
-            except Exception as e:
-                log.exception(e)
-                explorer_info.set_status_as_error()
-                db.commit()
-                raise JobError(
-                    f"Error instancing the explorer {explorer_info.exploration_type}."
-                ) from e
-
-            # prepare the dataset
-            try:
-                prepared_dataset = explorer_instance.prepare_dataset(
-                    loaded_dataset, explorer_info.columns
-                )
-            except Exception as e:
-                log.exception(e)
-                explorer_info.set_status_as_error()
-                db.commit()
-                raise JobError(
-                    (
-                        "Error preparing the dataset for the exploration "
-                        f"{explorer_info.exploration_type}."
-                    )
-                ) from e
-
-            # Launch the exploration
-            try:
-                result = explorer_instance.launch_exploration(
-                    prepared_dataset, explorer_info
-                )
-            except Exception as e:
-                log.exception(e)
-                explorer_info.set_status_as_error()
-                db.commit()
-                raise JobError(
-                    f"Error launching the exploration {explorer_info.exploration_type}."
-                ) from e
+                raise
 
             # Save the result
             try:
-                # save in the notebook folder
-                save_path = pathlib.Path(
-                    os.path.join(
-                        config["NOTEBOOK_PATH"],
-                        (f"{notebook_info.id}"),
-                    )
-                )
-                if not save_path.exists():
-                    save_path.mkdir(parents=True)
-
-                save_path = explorer_instance.save_notebook(
-                    notebook_info, explorer_info, save_path, result
-                )
-                if isinstance(save_path, str):
-                    save_path = pathlib.Path(save_path)
-                if not isinstance(save_path, pathlib.Path):
-                    raise JobError(
-                        (
-                            f"Error while saving the exploration"
-                            f" {explorer_info.exploration_type}"
-                            f", save path is not a pathlib.Path."
-                        )
-                    )
+                SaveExplorationUnit(explorer_id=explorer_id)(ctx)
 
                 # Update the explorer info
-                explorer_info.exploration_path = save_path.as_posix()
+                explorer_info.exploration_path = ctx.require("exploration_path")
                 explorer_info.set_status_as_finished()
                 db.commit()
             except Exception as e:
@@ -232,3 +187,5 @@ class ExplorerJob(BaseJob):
                         f"{explorer_info.exploration_type}."
                     )
                 ) from e
+            finally:
+                ctx.clear_cache()
