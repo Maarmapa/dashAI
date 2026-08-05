@@ -356,6 +356,7 @@ from DashAI.back.units.build_local_explainer_unit import BuildLocalExplainerUnit
 from DashAI.back.units.build_manual_input_unit import BuildManualInputUnit
 from DashAI.back.units.build_model_unit import BuildModelUnit
 from DashAI.back.units.evaluate_model_unit import EvaluateModelUnit
+from DashAI.back.units.fit_converter_unit import FitConverterUnit
 from DashAI.back.units.fit_model_unit import FitModelUnit
 from DashAI.back.units.generate_global_explanation_unit import (
     GenerateGlobalExplanationUnit,
@@ -375,6 +376,7 @@ from DashAI.back.units.save_dataset_unit import SaveDatasetUnit
 from DashAI.back.units.save_exploration_unit import SaveExplorationUnit
 from DashAI.back.units.save_model_unit import SaveModelUnit
 from DashAI.back.units.save_prediction_unit import SavePredictionUnit
+from DashAI.back.units.transform_dataset_unit import TransformDatasetUnit
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
@@ -548,6 +550,8 @@ def get_initial_components():
         EvaluateModelUnit,
         SaveModelUnit,
         ApplyConverterUnit,
+        FitConverterUnit,
+        TransformDatasetUnit,
         SaveDatasetUnit,
         RunExplorationUnit,
         SaveExplorationUnit,
