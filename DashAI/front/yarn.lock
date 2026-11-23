@@ -8033,7 +8033,7 @@ __metadata:
     formik: ^2.2.9
     geist: ^1.7.0
     html2canvas: ^1.4.1
-    i18next: ^25.7.4
+    i18next: ^26.3.4
     i18next-browser-languagedetector: ^8.2.0
     i18next-cli: ^1.34.1
     jest-watch-typeahead: ^0.6.5
@@ -11362,17 +11362,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"i18next@npm:^25.7.4":
-  version: 25.7.4
-  resolution: "i18next@npm:25.7.4"
-  dependencies:
-    "@babel/runtime": ^7.28.4
+"i18next@npm:^26.3.4":
+  version: 26.3.4
+  resolution: "i18next@npm:26.3.4"
   peerDependencies:
-    typescript: ^5
+    typescript: ^5 || ^6
   peerDependenciesMeta:
     typescript:
       optional: true
-  checksum: a8f28aefaa65af10288ea09decca520ef565d0f8c03ccb124ebb81fd67dacb87540f0fcb68686427f83286f86e534f8faff09817c8859d5b1d7ccc8253b7c52e
+  checksum: 08fb3cd474fe8725c5a7c8d0a31bbaaf8c9d906f0ec1306cc1e131d517334629f2e2de6e548b8d537c359f58537a9e9b835cf86a32897819bff3a2c6378310ca
   languageName: node
   linkType: hard
 
